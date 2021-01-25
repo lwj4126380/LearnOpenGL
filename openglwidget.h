@@ -8,6 +8,8 @@ class QOpenGLVertexArrayObject;
 class QOpenGLBuffer;
 class QOpenGLShader;
 class QOpenGLShaderProgram;
+class QOpenGLFramebufferObject;
+class QOpenGLTexture;
 
 class OpenGLWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
@@ -25,6 +27,9 @@ private:
     QOpenGLShader *m_vertexShader;
     QOpenGLShader *m_fragmentShader;
     QOpenGLShaderProgram *m_shaderProgram;
+    QOpenGLFramebufferObject *m_framebufferObject;
+    QOpenGLTexture *m_texture;
+    QOpenGLTexture *m_texture2;
 };
 
 #endif // OPENGLWIDGET_H
