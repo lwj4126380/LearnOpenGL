@@ -72,7 +72,8 @@ void GLTest::run()
                                                void main()
                                                {
                                                    TexCoords = vertex.zw;
-                                                   gl_Position = model * vec4(vertex.xy, 0.0, 1.0);
+                                                   mainPosition = vec4(vertex.xy, 0.0, 1.0);
+                                                   gl_Position = model * mainPosition;
                                                }
                                                )");
 
@@ -90,7 +91,7 @@ void GLTest::run()
                                             {
                                                 vec4 imageColor = texture(image, TexCoords);
                                                 if (mainPosition.x >= leftTop.x && mainPosition.y >= leftTop.y && mainPosition.x <= rightBottom.x && mainPosition.y <= rightBottom.y) {
-                                                    vec2 maskCoords = vec2((mainPosition.x - leftTop.x) / (rightBottom.x - leftTop.x), (mainPosition.y - leftTop.y) / (rightBottom.y - leftTop.y));
+                                                    vec2 maskCoords = vec2((mainPosition.x - leftTop.x) / (rightBottom.x - leftTop.x), -(mainPosition.y - leftTop.y) / (rightBottom.y - leftTop.y));
                                                     vec4 maskColor = texture(maskImage, maskCoords);
                                                     vec4 outputColor;
                                                     float a = maskColor.a + imageColor.a * (1.0 - maskColor.a);
@@ -136,8 +137,9 @@ void GLTest::run()
 //            model.scale(1, -1);
 //            model.scale(-1, 1);
 
-            m_shaderProgram->setUniformValue("leftTop", QVector2D(-0.1, -0.1));
-            m_shaderProgram->setUniformValue("rightBottom", QVector2D(0.5, 0.5));
+            qDebug() << "AAAA " << strawberry->width() << strawberry->height();
+            m_shaderProgram->setUniformValue("leftTop", QVector2D(-1, 1.0));
+            m_shaderProgram->setUniformValue("rightBottom", QVector2D(-1+(float)strawberry->width()/fbo->width()*2, 1.0+(float)strawberry->height()/fbo->height()*2));
             m_shaderProgram->setUniformValue("model", model);
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
