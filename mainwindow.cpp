@@ -16,7 +16,7 @@ GLTest::GLTest()
     surface->create();
 
     label = new QLabel();
-    label->resize(1280, 800);
+    label->resize(2000, 1400);
     label->show();
 }
 
@@ -31,7 +31,6 @@ void GLTest::run()
     glEnable(GL_BLEND);
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    auto fbo = new QOpenGLFramebufferObject(640, 480);
 
     auto m_vertex = new QOpenGLVertexArrayObject;
     m_vertex->create();
@@ -65,6 +64,7 @@ void GLTest::run()
                                                layout (location = 0) in vec4 vertex; // <vec2 position, vec2 texCoords>
 
                                                out vec2 TexCoords;
+                                               out vec4 mainPosition;
 
                                                uniform mat4 model;
                                                uniform mat4 projection;
@@ -79,12 +79,31 @@ void GLTest::run()
     b = m_fragmentShader->compileSourceCode(R"(
                                             #version 330 core
                                             in vec2 TexCoords;
+                                            in vec4 mainPosition;
                                             out vec4 color;
 
                                             uniform sampler2D image;
+                                            uniform sampler2D maskImage;
+                                            uniform vec2 leftTop;
+                                            uniform vec2 rightBottom;
                                             void main()
                                             {
-                                                color = texture(image, TexCoords);
+                                                vec4 imageColor = texture(image, TexCoords);
+                                                if (mainPosition.x >= leftTop.x && mainPosition.y >= leftTop.y && mainPosition.x <= rightBottom.x && mainPosition.y <= rightBottom.y) {
+                                                    vec2 maskCoords = vec2((mainPosition.x - leftTop.x) / (rightBottom.x - leftTop.x), (mainPosition.y - leftTop.y) / (rightBottom.y - leftTop.y));
+                                                    vec4 maskColor = texture(maskImage, maskCoords);
+                                                    vec4 outputColor;
+                                                    float a = maskColor.a + imageColor.a * (1.0 - maskColor.a);
+                                                    float alphaDivisor = a + step(a, 0.0);
+                                                    outputColor.r = (maskColor.r * maskColor.a + imageColor.r * imageColor.a * (1.0 - maskColor.a))/alphaDivisor;
+                                                    outputColor.g = (maskColor.g * maskColor.a + imageColor.g * imageColor.a * (1.0 - maskColor.a))/alphaDivisor;
+                                                    outputColor.b = (maskColor.b * maskColor.a + imageColor.b * imageColor.a * (1.0 - maskColor.a))/alphaDivisor;
+                                                    outputColor.a = a;
+                                                    color = outputColor;
+                                                }
+                                                else {
+                                                    color = imageColor;
+                                                }
                                             }
                                             )");
     auto m_shaderProgram = new QOpenGLShaderProgram;
@@ -92,42 +111,48 @@ void GLTest::run()
     m_shaderProgram->addShader(m_fragmentShader);
     m_shaderProgram->link();
 
-    auto m_texture = new QOpenGLTexture(QImage("E:/test.jpg"));
+    m_shaderProgram->bind();
+    m_shaderProgram->setUniformValue("image", 0);
+    m_shaderProgram->setUniformValue("maskImage", 1);
+
+    auto m_texture = new QOpenGLTexture(QImage("E:/test1.jpg"));
     auto strawberry = new QOpenGLTexture(QImage("C:/Users/luweijia.YUPAOPAO/Desktop/strawberry2.png"));
+
+    auto fbo = new QOpenGLFramebufferObject(m_texture->width(), m_texture->height());
+
+    glActiveTexture(GL_TEXTURE0);
+    m_texture->bind();
+    glActiveTexture(GL_TEXTURE1);
+    strawberry->bind();
 
     b = fbo->bind();
     glViewport(0, 0, fbo->width(), fbo->height());
     {
         m_vertex->bind();
         m_shaderProgram->bind();
-
-        QMatrix4x4 projection;
-        projection.ortho(QRect(0, 0, 640, 480));
-        m_shaderProgram->setUniformValue("projection", projection);
-
         {
-            m_texture->bind();
             QMatrix4x4 model;
             model.setToIdentity();
 //            model.scale(1, -1);
 //            model.scale(-1, 1);
 
-
+            m_shaderProgram->setUniformValue("leftTop", QVector2D(-0.1, -0.1));
+            m_shaderProgram->setUniformValue("rightBottom", QVector2D(0.5, 0.5));
             m_shaderProgram->setUniformValue("model", model);
             glDrawArrays(GL_TRIANGLES, 0, 6);
-            m_texture->release();
         }
 
-        {
-            strawberry->bind();
-            QMatrix4x4 model;
-            model.setToIdentity();
-            model.scale(180.0/fbo->width(), 180.0/fbo->height());
-            model.translate(200.0/180.0, 0); // 偏移值是相对自身大小的百分比
-            m_shaderProgram->setUniformValue("model", model);
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-            strawberry->release();
-        }
+//        {
+//            strawberry->bind();
+//            QMatrix4x4 model;
+//            model.setToIdentity();
+//            model.scale(180.0/fbo->width(), 180.0/fbo->height());
+//            model.translate(200.0/180.0, 0); // 偏移值是相对自身大小的百分比
+//            m_shaderProgram->setUniformValue("model", model);
+//            glDrawArrays(GL_TRIANGLES, 0, 6);
+//            strawberry->release();
+//        }
+
         m_vertex->release();
         m_shaderProgram->release();
     }
@@ -153,10 +178,6 @@ MainWindow::MainWindow(QWidget *parent)
     v->setSpacing(0);
     v->setMargin(0);
     v->addWidget(new OpenGLWidget);
-
-    GLTest *t = new GLTest;
-    t->setParent(this);
-    t->start();
 }
 
 MainWindow::~MainWindow()
