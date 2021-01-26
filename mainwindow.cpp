@@ -8,6 +8,7 @@
 #include <QOpenGLShader>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLTexture>
+#include <QOpenGLFramebufferObjectFormat>
 
 GLTest::GLTest()
 {
@@ -28,8 +29,7 @@ void GLTest::run()
 
     glClearColor(1.0f, 0.0f, 0.0f, 0.0f);
     glEnable(GL_BLEND);
-    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
-
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     auto fbo = new QOpenGLFramebufferObject(640, 480);
 
@@ -43,24 +43,14 @@ void GLTest::run()
     m_vertexBuffer->bind();
     float vertices[] =
     {
-        0.0f, 1.0f, 0.0f, 1.0f,
-        1.0f, 0.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 0.0f,
-
-        0.0f, 1.0f, 0.0f, 1.0f,
-        1.0f, 1.0f, 1.0f, 1.0f,
-        1.0f, 0.0f, 1.0f, 0.0f
+        -1.0f, 1.0f, 0.0f, 0.0f,
+        1.0f, -1.0f, 1.0f, 1.0f,
+        -1.0f, -1.0f, 0.0f, 1.0f,
+        -1.0f, 1.0f, 0.0f, 0.0f,
+        1.0f, -1.0f, 1.0f, 1.0f,
+        1.0f, 1.0f, 1.0f, 0.0f
     };
-//    float vertices[] =
-//    {
-//        0.0f, 0.0f, 0.0f, 1.0f,
-//        1.0f, 1.0f, 1.0f, 0.0f,
-//        0.0f, 1.0f, 0.0f, 0.0f,
 
-//        0.0f, 0.0f, 0.0f, 1.0f,
-//        1.0f, 1.0f, 1.0f, 0.0f,
-//        1.0f, 0.0f, 1.0f, 1.0f
-//    };
     m_vertexBuffer->allocate(sizeof(vertices));
     m_vertexBuffer->write(0, vertices, sizeof (vertices));
     glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4*sizeof (float), (void *)0);
@@ -82,7 +72,7 @@ void GLTest::run()
                                                void main()
                                                {
                                                    TexCoords = vertex.zw;
-                                                   gl_Position = projection * model * vec4(vertex.xy, 0.0, 1.0);
+                                                   gl_Position = model * vec4(vertex.xy, 0.0, 1.0);
                                                }
                                                )");
 
@@ -103,6 +93,7 @@ void GLTest::run()
     m_shaderProgram->link();
 
     auto m_texture = new QOpenGLTexture(QImage("E:/test.jpg"));
+    auto strawberry = new QOpenGLTexture(QImage("C:/Users/luweijia.YUPAOPAO/Desktop/strawberry2.png"));
 
     b = fbo->bind();
     glViewport(0, 0, fbo->width(), fbo->height());
@@ -118,14 +109,24 @@ void GLTest::run()
             m_texture->bind();
             QMatrix4x4 model;
             model.setToIdentity();
-            model.translate(0, 0);
-    //        model.translate(m_texture->width()*0.5f, m_texture->height()*0.5f);
-    //        model.rotate(180, QVector3D(0, 0, 1.0));
-    //        model.translate(-m_texture->width()*0.5f, -m_texture->height()*0.5f);
-            model.scale(QVector3D(640, 480, 1.0));
+//            model.scale(1, -1);
+//            model.scale(-1, 1);
+
+
             m_shaderProgram->setUniformValue("model", model);
             glDrawArrays(GL_TRIANGLES, 0, 6);
             m_texture->release();
+        }
+
+        {
+            strawberry->bind();
+            QMatrix4x4 model;
+            model.setToIdentity();
+            model.scale(180.0/fbo->width(), 180.0/fbo->height());
+            model.translate(200.0/180.0, 0); // 偏移值是相对自身大小的百分比
+            m_shaderProgram->setUniformValue("model", model);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            strawberry->release();
         }
         m_vertex->release();
         m_shaderProgram->release();
