@@ -53,34 +53,36 @@ GLTest::GLTest()
     qint64 m_gameStartTime = QDateTime::currentMSecsSinceEpoch();
     moveToThread(this);
 
-//    QTimer *timer = new QTimer;
-//    timer->moveToThread(qApp->thread());
-//    connect(timer, &QTimer::timeout, timer, [=](){
-//        int s, h;
-//        calcPosition(s, h);
-//        qreal deltaTime = (QDateTime::currentMSecsSinceEpoch() -
-//                   m_gameStartTime) /
-//                  1000.;
-//        qreal gvalue =
-//            8 * h / (STRAWBERRY_TIME * STRAWBERRY_TIME);
-//        int s1 = s / qSqrt(8 * h / gvalue) * deltaTime;
-//        int h1 = qSqrt(2 * gvalue * h) * deltaTime -
-//             0.5 * gvalue * deltaTime * deltaTime;
-//        qDebug() << "AAAA " << h1;
-//        QPoint center =
-//            QPoint(s1 + 1920 / 2 -
-//                       180 / 2,
-//                   h1+180);
+    QTimer *timer = new QTimer;
+    timer->moveToThread(qApp->thread());
+    connect(timer, &QTimer::timeout, timer, [=](){
+        int s, h;
+        calcPosition(s, h);
+        qreal deltaTime = (QDateTime::currentMSecsSinceEpoch() -
+                   m_gameStartTime) /
+                  1000.;
+        qreal gvalue =
+            8 * h / (STRAWBERRY_TIME * STRAWBERRY_TIME);
+        int s1 = s / qSqrt(8 * h / gvalue) * deltaTime;
+        int h1 = qSqrt(2 * gvalue * h) * deltaTime -
+             0.5 * gvalue * deltaTime * deltaTime;
+        qDebug() << "AAAA " << h1;
+        QPoint center =
+            QPoint(s1 + 1920 / 2 -
+                       180 / 2,
+                   h1+180);
 
-//        //qDebug() << "AAAAAAA " << center.x() << center.y();
-//        QMetaObject::invokeMethod(this, "test", Qt::BlockingQueuedConnection,
-//                                  Q_ARG(const QImage &, testImage),
-//                                  Q_ARG(bool, true),
-//                                  Q_ARG(int, 0),
-//                                  Q_ARG(int, center.x()),
-//                                  Q_ARG(int, center.y()));
-//    });
-//    timer->start(30);
+        //qDebug() << "AAAAAAA " << center.x() << center.y();
+        QMetaObject::invokeMethod(this, "test", Qt::BlockingQueuedConnection,
+                                  Q_ARG(const QImage &, testImage),
+                                  Q_ARG(bool, true),
+                                  Q_ARG(int, 0),
+                                  Q_ARG(int, center.x()),
+                                  Q_ARG(int, center.y()),
+                                  Q_ARG(bool, false),
+                                  Q_ARG(bool, true));
+    });
+    timer->start(30);
 }
 
 GLTest::~GLTest()
@@ -97,12 +99,12 @@ void GLTest::run()
     initVertexData();
     initTexture();
 
-    test(QImage("E:/test1.jpg"), true, 0, 480, 480);
+    //test(QImage("E:/test1.jpg"), true, 0, 480, 480, true, true);
 
 
 
 
-    //exec();
+    exec();
 
     ctx->makeCurrent(surface);
     delete m_fbo;
@@ -122,7 +124,7 @@ void GLTest::run()
     surface->deleteLater();
 }
 
-void GLTest::test(const QImage &image, bool drawMask, int maskType, int x, int y)
+void GLTest::test(const QImage &image, bool drawMask, int maskType, int x, int y, bool fliph, bool flipv)
 {
     ctx->makeCurrent(surface);
     bool sizeChanged = (image.width() != m_fboWidth || image.height() != m_fboHeight);
@@ -161,6 +163,11 @@ void GLTest::test(const QImage &image, bool drawMask, int maskType, int x, int y
     QImage ii = image.convertToFormat(QImage::Format_RGBA8888);
     m_backgroundTexture->setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, ii.constBits());
 
+    float maskX = 2. * x / m_fboWidth - 1;
+    float maskY = 2. * y / m_fboHeight - 1;
+    float maskWidth = (float)m_strawberryTexture->width()/m_fboWidth*2;
+    float maskHeight = -(float)m_strawberryTexture->height()/m_fboHeight*2;
+
     m_fbo->bind();
 
     glActiveTexture(GL_TEXTURE0);
@@ -174,22 +181,28 @@ void GLTest::test(const QImage &image, bool drawMask, int maskType, int x, int y
         m_shader->bind();
         {
             QMatrix4x4 model;
-            model.setToIdentity();
-            model.scale(1, -1);
-//            model.scale(-1, 1);
+            QMatrix4x4 flipMatrix;
 
-            float maskX = 2. * x / m_fboWidth - 1;
-            float maskY = 2. * y / m_fboHeight - 1;
+            if (fliph)
+            {
+                model.scale(-1, 1);
+                flipMatrix.scale(-1, 1);
+                maskX = -maskX - maskWidth;
+            }
 
-            m_shader->setUniformValue("vflip", true);
-            m_shader->setUniformValue("hflip", false);
-            m_shader->setUniformValue("leftTop", QVector2D(maskX, maskY));
-            m_shader->setUniformValue("maskSize", QVector2D((float)m_strawberryTexture->width()/m_fboWidth*2, -(float)m_strawberryTexture->height()/m_fboHeight*2));
+            if (flipv)
+            {
+                model.scale(1, -1);
+                flipMatrix.scale(1, -1);
+                maskY = -maskY - maskHeight;
+            }
+
+            m_shader->setUniformValue("flipMatrix", flipMatrix);
             m_shader->setUniformValue("model", model);
+            m_shader->setUniformValue("leftTop", QVector2D(maskX, maskY));
+            m_shader->setUniformValue("maskSize", QVector2D(maskWidth, maskHeight));
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
-
-
 
         m_vao->release();
         m_shader->release();
@@ -237,18 +250,13 @@ void GLTest::initShader()
                                             uniform sampler2D maskImage;
                                             uniform vec2 leftTop;
                                             uniform vec2 maskSize;
-                                            uniform bool hflip;
-                                            uniform bool vflip;
+                                            uniform mat4 flipMatrix;
                                             void main()
                                             {
                                                 vec4 imageColor = texture(image, TexCoords);
-                                                vec2 newLeftTop = leftTop;
-                                                if (vflip)
-                                                    newLeftTop = vec2(leftTop.x, -leftTop.y - maskSize.y);
 
-                                                if (mainPosition.x >= newLeftTop.x && mainPosition.y <= newLeftTop.y && mainPosition.x <= newLeftTop.x + maskSize.x && mainPosition.y >= newLeftTop.y + maskSize.y) {
-                                                    vec4 maskCoords = vec4((mainPosition.x - newLeftTop.x) / maskSize.x, (mainPosition.y - newLeftTop.y) / maskSize.y, 1.0, 1.0);
-
+                                                if (mainPosition.x >= leftTop.x && mainPosition.y <= leftTop.y && mainPosition.x <= leftTop.x + maskSize.x && mainPosition.y >= leftTop.y + maskSize.y) {
+                                                    vec4 maskCoords = flipMatrix * vec4((mainPosition.x - leftTop.x) / maskSize.x, (mainPosition.y - leftTop.y) / maskSize.y, 1.0, 1.0);
                                                     vec4 maskColor = texture(maskImage, maskCoords.xy);
 
                                                     vec4 outputColor;

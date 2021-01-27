@@ -25,7 +25,7 @@ public:
     ~GLTest();
     void run() override;
 
-    Q_INVOKABLE void test(const QImage &image, bool drawMask, int maskType, int x, int y);
+    Q_INVOKABLE void test(const QImage &image, bool drawMask, int maskType, int x, int y, bool fliph, bool flipv);
 
 private:
     void initShader();
