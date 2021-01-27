@@ -181,6 +181,8 @@ void GLTest::test(const QImage &image, bool drawMask, int maskType, int x, int y
             float maskX = 2. * x / m_fboWidth - 1;
             float maskY = 2. * y / m_fboHeight - 1;
 
+            m_shader->setUniformValue("vflip", true);
+            m_shader->setUniformValue("hflip", false);
             m_shader->setUniformValue("leftTop", QVector2D(maskX, maskY));
             m_shader->setUniformValue("maskSize", QVector2D((float)m_strawberryTexture->width()/m_fboWidth*2, -(float)m_strawberryTexture->height()/m_fboHeight*2));
             m_shader->setUniformValue("model", model);
@@ -235,14 +237,20 @@ void GLTest::initShader()
                                             uniform sampler2D maskImage;
                                             uniform vec2 leftTop;
                                             uniform vec2 maskSize;
+                                            uniform bool hflip;
+                                            uniform bool vflip;
                                             void main()
                                             {
                                                 vec4 imageColor = texture(image, TexCoords);
-                                                //vec2 v-mirror = vec2(leftTop.x, leftTop.)
-                                                if (mainPosition.x >= leftTop.x && mainPosition.y <= leftTop.y && mainPosition.x <= leftTop.x + maskSize.x && mainPosition.y >= leftTop.y + maskSize.y) {
-                                                    //color = vec4(1.0, 0.0, 0.0, 1.0);
-                                                    vec2 maskCoords = vec2((mainPosition.x - leftTop.x) / maskSize.x, (mainPosition.y - leftTop.y) / maskSize.y);
-                                                    vec4 maskColor = texture(maskImage, maskCoords);
+                                                vec2 newLeftTop = leftTop;
+                                                if (vflip)
+                                                    newLeftTop = vec2(leftTop.x, -leftTop.y - maskSize.y);
+
+                                                if (mainPosition.x >= newLeftTop.x && mainPosition.y <= newLeftTop.y && mainPosition.x <= newLeftTop.x + maskSize.x && mainPosition.y >= newLeftTop.y + maskSize.y) {
+                                                    vec4 maskCoords = vec4((mainPosition.x - newLeftTop.x) / maskSize.x, (mainPosition.y - newLeftTop.y) / maskSize.y, 1.0, 1.0);
+
+                                                    vec4 maskColor = texture(maskImage, maskCoords.xy);
+
                                                     vec4 outputColor;
                                                     float a = maskColor.a + imageColor.a * (1.0 - maskColor.a);
                                                     float alphaDivisor = a + step(a, 0.0);
