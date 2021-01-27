@@ -9,54 +9,202 @@
 #include <QOpenGLShaderProgram>
 #include <QOpenGLTexture>
 #include <QOpenGLFramebufferObjectFormat>
+#include <QTimer>
+#include <QDateTime>
+#include <QtMath>
+
+//        {
+//            strawberry->bind();
+//            QMatrix4x4 model;
+//            model.setToIdentity();
+//            model.scale(180.0/fbo->width(), 180.0/fbo->height());
+//            model.translate(200.0/180.0, 0); // 偏移值是相对自身大小的百分比
+//            m_shaderProgram->setUniformValue("model", model);
+//            glDrawArrays(GL_TRIANGLES, 0, 6);
+//            strawberry->release();
+//        }
+
+#define G_VALUE 1000
+#define STRAWBERRY_TIME 4
+
+void calcPosition(int &width, int &height)
+{
+    int stepx = 1920 / 5;
+    int stepy = 1080 / 3;
+    int x_r = 1 % 5;
+    int y_r = 1 / 5;
+
+    width = (x_r < 2 ? (x_r - 2.5) * stepx : (x_r - 1.5) * stepx);
+    height = 1080 - (y_r + 0.5) * stepy;
+}
+
+QImage testImage;
 
 GLTest::GLTest()
 {
+    testImage = QImage("E:/test1.jpg");
     surface = new QOffscreenSurface;
     surface->create();
 
     label = new QLabel();
     label->resize(2000, 1400);
     label->show();
+
+    qint64 m_gameStartTime = QDateTime::currentMSecsSinceEpoch();
+    moveToThread(this);
+
+//    QTimer *timer = new QTimer;
+//    timer->moveToThread(qApp->thread());
+//    connect(timer, &QTimer::timeout, timer, [=](){
+//        int s, h;
+//        calcPosition(s, h);
+//        qreal deltaTime = (QDateTime::currentMSecsSinceEpoch() -
+//                   m_gameStartTime) /
+//                  1000.;
+//        qreal gvalue =
+//            8 * h / (STRAWBERRY_TIME * STRAWBERRY_TIME);
+//        int s1 = s / qSqrt(8 * h / gvalue) * deltaTime;
+//        int h1 = qSqrt(2 * gvalue * h) * deltaTime -
+//             0.5 * gvalue * deltaTime * deltaTime;
+//        qDebug() << "AAAA " << h1;
+//        QPoint center =
+//            QPoint(s1 + 1920 / 2 -
+//                       180 / 2,
+//                   h1+180);
+
+//        //qDebug() << "AAAAAAA " << center.x() << center.y();
+//        QMetaObject::invokeMethod(this, "test", Qt::BlockingQueuedConnection,
+//                                  Q_ARG(const QImage &, testImage),
+//                                  Q_ARG(bool, true),
+//                                  Q_ARG(int, 0),
+//                                  Q_ARG(int, center.x()),
+//                                  Q_ARG(int, center.y()));
+//    });
+//    timer->start(30);
+}
+
+GLTest::~GLTest()
+{
+    surface->deleteLater();
+
 }
 
 void GLTest::run()
 {
-    ctx = new QOpenGLContext;
-    ctx->create();
+    qDebug() << "BBBBBBB " << QThread::currentThreadId();
+    initOpenGLContext();
+    initShader();
+    initVertexData();
+    initTexture();
+
+    test(QImage("E:/test1.jpg"), true, 0, 480, 480);
+
+
+
+
+    //exec();
+
     ctx->makeCurrent(surface);
-    initializeOpenGLFunctions();
-
-    glClearColor(1.0f, 0.0f, 0.0f, 0.0f);
-    glEnable(GL_BLEND);
-    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-
-    auto m_vertex = new QOpenGLVertexArrayObject;
-    m_vertex->create();
-    m_vertex->bind();
-
-    auto m_vertexBuffer = new QOpenGLBuffer;
-    m_vertexBuffer->setUsagePattern(QOpenGLBuffer::StaticDraw);
-    m_vertexBuffer->create();
-    m_vertexBuffer->bind();
-    float vertices[] =
+    delete m_fbo;
+    if (m_backgroundTexture)
     {
-        -1.0f, 1.0f, 0.0f, 0.0f,
-        1.0f, -1.0f, 1.0f, 1.0f,
-        -1.0f, -1.0f, 0.0f, 1.0f,
-        -1.0f, 1.0f, 0.0f, 0.0f,
-        1.0f, -1.0f, 1.0f, 1.0f,
-        1.0f, 1.0f, 1.0f, 0.0f
-    };
+        m_backgroundTexture->destroy();
+        delete m_backgroundTexture;
+    }
+    m_strawberryTexture->destroy();
+    delete m_strawberryTexture;
+    m_bombTexture->destroy();
+    delete m_bombTexture;
 
-    m_vertexBuffer->allocate(sizeof(vertices));
-    m_vertexBuffer->write(0, vertices, sizeof (vertices));
-    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4*sizeof (float), (void *)0);
-    glEnableVertexAttribArray(0);
-    m_vertexBuffer->release();
-    m_vertex->release();
+    delete m_shader;
+    delete m_vao;
+    delete ctx;
+    surface->deleteLater();
+}
 
+void GLTest::test(const QImage &image, bool drawMask, int maskType, int x, int y)
+{
+    ctx->makeCurrent(surface);
+    bool sizeChanged = (image.width() != m_fboWidth || image.height() != m_fboHeight);
+    if (sizeChanged)
+    {
+        m_fboWidth = image.width();
+        m_fboHeight = image.height();
+    }
+
+    if (!m_fbo || sizeChanged)
+    {
+        if(m_fbo)
+            delete m_fbo;
+
+        m_fboWidth = image.width();
+        m_fboHeight = image.height();
+        QOpenGLFramebufferObjectFormat format;
+        format.setInternalTextureFormat(GL_RGBA);
+        m_fbo = new QOpenGLFramebufferObject(m_fboWidth, m_fboHeight, format);
+    }
+
+    if (!m_backgroundTexture || sizeChanged)
+    {
+        if (m_backgroundTexture)
+        {
+            m_backgroundTexture->destroy();
+            delete m_backgroundTexture;
+        }
+
+        m_backgroundTexture = new QOpenGLTexture(QOpenGLTexture::Target2D);
+        m_backgroundTexture->setSize(m_fboWidth, m_fboHeight);
+        m_backgroundTexture->setFormat(QOpenGLTexture::RGBA8_UNorm);
+        m_backgroundTexture->allocateStorage();
+    }
+
+    QImage ii = image.convertToFormat(QImage::Format_RGBA8888);
+    m_backgroundTexture->setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, ii.constBits());
+
+    m_fbo->bind();
+
+    glActiveTexture(GL_TEXTURE0);
+    m_backgroundTexture->bind();
+    glActiveTexture(GL_TEXTURE1);
+    m_strawberryTexture->bind();
+
+    glViewport(0, 0, m_fboWidth, m_fboHeight);
+    {
+        m_vao->bind();
+        m_shader->bind();
+        {
+            QMatrix4x4 model;
+            model.setToIdentity();
+            model.scale(1, -1);
+//            model.scale(-1, 1);
+
+            float maskX = 2. * x / m_fboWidth - 1;
+            float maskY = 2. * y / m_fboHeight - 1;
+
+            m_shader->setUniformValue("leftTop", QVector2D(maskX, maskY));
+            m_shader->setUniformValue("maskSize", QVector2D((float)m_strawberryTexture->width()/m_fboWidth*2, -(float)m_strawberryTexture->height()/m_fboHeight*2));
+            m_shader->setUniformValue("model", model);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
+
+
+
+        m_vao->release();
+        m_shader->release();
+    }
+
+    auto fi = m_fbo->texture();
+    m_fbo->release();
+    QImage image1 = m_fbo->toImage();
+    QMetaObject::invokeMethod(label, [=](){
+        label->setPixmap(QPixmap::fromImage(image1));
+    });
+
+    ctx->doneCurrent();
+}
+
+void GLTest::initShader()
+{
     auto m_vertexShader = new QOpenGLShader(QOpenGLShader::Vertex);
     auto m_fragmentShader = new QOpenGLShader(QOpenGLShader::Fragment);
     bool b = m_vertexShader->compileSourceCode(R"(
@@ -86,13 +234,14 @@ void GLTest::run()
                                             uniform sampler2D image;
                                             uniform sampler2D maskImage;
                                             uniform vec2 leftTop;
-                                            uniform vec2 rightBottom;
+                                            uniform vec2 maskSize;
                                             void main()
                                             {
                                                 vec4 imageColor = texture(image, TexCoords);
-                                                if (mainPosition.x >= leftTop.x && mainPosition.y <= leftTop.y && mainPosition.x <= rightBottom.x && mainPosition.y >= rightBottom.y) {
+                                                //vec2 v-mirror = vec2(leftTop.x, leftTop.)
+                                                if (mainPosition.x >= leftTop.x && mainPosition.y <= leftTop.y && mainPosition.x <= leftTop.x + maskSize.x && mainPosition.y >= leftTop.y + maskSize.y) {
                                                     //color = vec4(1.0, 0.0, 0.0, 1.0);
-                                                    vec2 maskCoords = vec2((mainPosition.x - leftTop.x) / (rightBottom.x - leftTop.x), (mainPosition.y - leftTop.y) / (rightBottom.y - leftTop.y));
+                                                    vec2 maskCoords = vec2((mainPosition.x - leftTop.x) / maskSize.x, (mainPosition.y - leftTop.y) / maskSize.y);
                                                     vec4 maskColor = texture(maskImage, maskCoords);
                                                     vec4 outputColor;
                                                     float a = maskColor.a + imageColor.a * (1.0 - maskColor.a);
@@ -108,67 +257,61 @@ void GLTest::run()
                                                 }
                                             }
                                             )");
-    auto m_shaderProgram = new QOpenGLShaderProgram;
-    m_shaderProgram->addShader(m_vertexShader);
-    m_shaderProgram->addShader(m_fragmentShader);
-    m_shaderProgram->link();
+    m_shader = new QOpenGLShaderProgram;
+    m_shader->addShader(m_vertexShader);
+    m_shader->addShader(m_fragmentShader);
+    m_shader->link();
 
-    m_shaderProgram->bind();
-    m_shaderProgram->setUniformValue("image", 0);
-    m_shaderProgram->setUniformValue("maskImage", 1);
+    m_shader->bind();
+    m_shader->setUniformValue("image", 0);
+    m_shader->setUniformValue("maskImage", 1);
+    m_shader->release();
+}
 
-    auto m_texture = new QOpenGLTexture(QImage("E:/test1.jpg"));
-    auto strawberry = new QOpenGLTexture(QImage("C:/Users/luweijia.YUPAOPAO/Desktop/strawberry2.png"));
+void GLTest::initOpenGLContext()
+{
+    ctx = new QOpenGLContext;
+    ctx->create();
+    ctx->makeCurrent(surface);
+    initializeOpenGLFunctions();
 
-    auto fbo = new QOpenGLFramebufferObject(m_texture->width(), m_texture->height());
+    glClearColor(1.0f, 0.0f, 0.0f, 0.0f);
+    glEnable(GL_BLEND);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+}
 
-    glActiveTexture(GL_TEXTURE0);
-    m_texture->bind();
-    glActiveTexture(GL_TEXTURE1);
-    strawberry->bind();
+void GLTest::initVertexData()
+{
+    m_vao = new QOpenGLVertexArrayObject;
+    m_vao->create();
+    m_vao->bind();
 
-    b = fbo->bind();
-    glViewport(0, 0, fbo->width(), fbo->height());
+    auto m_vertexBuffer = new QOpenGLBuffer;
+    m_vertexBuffer->setUsagePattern(QOpenGLBuffer::StaticDraw);
+    m_vertexBuffer->create();
+    m_vertexBuffer->bind();
+    float vertices[] =
     {
-        m_vertex->bind();
-        m_shaderProgram->bind();
-        {
-            QMatrix4x4 model;
-            model.setToIdentity();
-//            model.scale(1, -1);
-//            model.scale(-1, 1);
+        -1.0f, 1.0f, 0.0f, 0.0f,
+        1.0f, -1.0f, 1.0f, 1.0f,
+        -1.0f, -1.0f, 0.0f, 1.0f,
+        -1.0f, 1.0f, 0.0f, 0.0f,
+        1.0f, -1.0f, 1.0f, 1.0f,
+        1.0f, 1.0f, 1.0f, 0.0f
+    };
 
-            qDebug() << "AAAA " << strawberry->width() << strawberry->height();
-            m_shaderProgram->setUniformValue("leftTop", QVector2D(-0.5, -0.5));
-            m_shaderProgram->setUniformValue("rightBottom", QVector2D(-0.5+(float)strawberry->width()/fbo->width()*2, -0.5-(float)strawberry->height()/fbo->height()*2));
-            m_shaderProgram->setUniformValue("model", model);
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-        }
+    m_vertexBuffer->allocate(sizeof(vertices));
+    m_vertexBuffer->write(0, vertices, sizeof (vertices));
+    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4*sizeof (float), (void *)0);
+    glEnableVertexAttribArray(0);
+    m_vertexBuffer->release();
+    m_vao->release();
+}
 
-//        {
-//            strawberry->bind();
-//            QMatrix4x4 model;
-//            model.setToIdentity();
-//            model.scale(180.0/fbo->width(), 180.0/fbo->height());
-//            model.translate(200.0/180.0, 0); // 偏移值是相对自身大小的百分比
-//            m_shaderProgram->setUniformValue("model", model);
-//            glDrawArrays(GL_TRIANGLES, 0, 6);
-//            strawberry->release();
-//        }
-
-        m_vertex->release();
-        m_shaderProgram->release();
-    }
-
-    auto fi = fbo->texture();
-    fbo->release();
-    QImage image = fbo->toImage();
-    QMetaObject::invokeMethod(label, [=](){
-        label->setPixmap(QPixmap::fromImage(image));
-    });
-
-    ctx->doneCurrent();
-    //exec();
+void GLTest::initTexture()
+{
+    m_strawberryTexture = new QOpenGLTexture(QImage("C:/Users/luweijia.YUPAOPAO/Desktop/strawberry2.png"));
+    m_bombTexture = new QOpenGLTexture(QImage("C:/Users/luweijia.YUPAOPAO/Desktop/bomb2.png"));
 }
 
 MainWindow::MainWindow(QWidget *parent)
